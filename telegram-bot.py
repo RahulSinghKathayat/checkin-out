@@ -8,13 +8,11 @@ from telegram.ext import Application, CallbackQueryHandler, CommandHandler, Cont
 load_dotenv()
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-
-# 1. Action to send prompt with check-in buttons (/start or /checkin)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [
-            InlineKeyboardButton("✅ Yes", callback_data="checkin_yes"),
-            InlineKeyboardButton("❌ No", callback_data="checkin_no"),
+            InlineKeyboardButton("Yes", callback_data="checkin_yes"),
+            InlineKeyboardButton("No", callback_data="checkin_no"),
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -24,7 +22,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup,
         )
 
-# 2. Action executed when you tap a button
 async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     if not query:
@@ -48,7 +45,6 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
         }
         
-        # Dynamically generate the current timestamp
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         payload = {
@@ -65,26 +61,24 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             response = requests.post(url, headers=headers, json=payload)
             if response.status_code == 200:
-                await query.edit_message_text(f"✅ Successfully checked in at {current_time}!")
+                await query.edit_message_text(f"Successfully checked in at {current_time}!")
             else:
-                await query.edit_message_text(f"❌ Check-in failed. Server response code: {response.status_code}")
+                await query.edit_message_text(f"Check-in failed. Server response code: {response.status_code}")
         except Exception as e:
-            await query.edit_message_text(f"❌ Error connecting to HRMS: {str(e)}")
+            await query.edit_message_text(f"Error connecting to HRMS: {str(e)}")
             
     elif query.data == "checkin_no":
-        await query.edit_message_text("👍 Ignored. Have a great day!")
+        await query.edit_message_text("Ignored. Have a great day!")
 
 def main():
     if not BOT_TOKEN:
         raise SystemExit("TELEGRAM_BOT_TOKEN is not set (add it to .env)")
 
     app = Application.builder().token(BOT_TOKEN).build()
-
-    # Register handlers
     app.add_handler(CommandHandler(["start", "checkin"], start))
     app.add_handler(CallbackQueryHandler(handle_button))
 
-    print("🤖 Bot is running! Press Ctrl+C to stop.")
+    print("Bot is running!")
     app.run_polling()
 
 if __name__ == "__main__":
