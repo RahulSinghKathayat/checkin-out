@@ -56,6 +56,11 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         pass
 
 def run_dummy_server():
+    # PORT is only to fool Render.com.
+    # acutally we don't need any server.
+    # but Render.com requires a server to run.
+    # So we run a dummy server that does nothing.
+    # And it will run forever.
     port = int(os.environ.get("PORT", 8080))
     server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
     server.serve_forever()
