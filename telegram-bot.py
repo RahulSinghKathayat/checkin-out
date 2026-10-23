@@ -17,6 +17,30 @@ checkout_tasks = {}
 is_checked_in = False
 telegram_app = None
 
+DIGITS = {
+    '0': ["┌─┐", "│ │", "└─┘"],
+    '1': [" ┐ ", " │ ", " ┴ "],
+    '2': ["┌─┐", "┌─┘", "└──"],
+    '3': ["┌─┐", " ─┤", "└─┘"],
+    '4': ["│ │", "└─┤", "  ┴"],
+    '5': ["┌─┐", "└─┐", "└─┘"],
+    '6': ["┌─┐", "├─┐", "└─┘"],
+    '7': ["──┐", "  │", "  ┴"],
+    '8': ["┌─┐", "├─┤", "└─┘"],
+    '9': ["┌─┐", "└─┤", "──┘"],
+    ':': ["   ", " ┬ ", " ┴ "],
+    '-': ["   ", "───", "   "],
+    ' ': ["   ", "   ", "   "]
+}
+
+def render_ascii_str(text):
+    lines = ["", "", ""]
+    for char in text:
+        glyph = DIGITS.get(char, ["   ", "   ", "   "])
+        for i in range(3):
+            lines[i] += glyph[i] + " "
+    return "```\n" + "\n".join(lines) + "\n```"
+
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -36,6 +60,9 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
                             [
                                 {"text": "✅ Yes", "callback_data": "checkin_yes"},
                                 {"text": "❌ No", "callback_data": "checkin_no"}
+                            ],
+                            [
+                                {"text": "Cancel", "callback_data": "cancel_action"}
                             ]
                         ]
                     }
@@ -56,11 +83,6 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         pass
 
 def run_dummy_server():
-    # PORT is only to fool Render.com.
-    # acutally we don't need any server.
-    # but Render.com requires a server to run.
-    # So we run a dummy server that does nothing.
-    # And it will run forever.
     port = int(os.environ.get("PORT", 8080))
     server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
     server.serve_forever()
@@ -72,6 +94,9 @@ async def checkout_loop(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
             [
                 InlineKeyboardButton("✅ Check Out", callback_data="checkout_yes"),
                 InlineKeyboardButton("❌ Ignore", callback_data="checkout_no"),
+            ],
+            [
+                InlineKeyboardButton("🚫 Cancel (Week Off / Manual)", callback_data="cancel_action"),
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -90,6 +115,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [
             InlineKeyboardButton("Yes", callback_data="checkin_yes"),
             InlineKeyboardButton("No", callback_data="checkin_no"),
+        ],
+        [
+            InlineKeyboardButton("🚫 Cancel (Week Off / Manual)", callback_data="cancel_action"),
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -110,7 +138,14 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     chat_id = update.effective_chat.id
 
-    if query.data == "checkin_yes":
+    if query.data == "cancel_action":
+        is_checked_in = False
+        if chat_id in checkout_tasks:
+            checkout_tasks[chat_id].cancel()
+            del checkout_tasks[chat_id]
+        await query.edit_message_text("🚫 Cancelled. Logged as week off or manual entry. Have a great day!")
+
+    elif query.data == "checkin_yes":
         await query.edit_message_text("⏳ Processing office check-in via Novostack HRMS...")
         
         url = "https://hrms.novostack.com/api/method/frappe.client.insert"
@@ -125,7 +160,11 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
         }
         
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = datetime.now()
+        current_time = now.strftime("%Y-%m-%d %H:%M:%S")
+        date_ascii = render_ascii_str(now.strftime("%Y-%m-%d"))
+        time_ascii = render_ascii_str(now.strftime("%H:%M:%S"))
+        
         payload = {
             "doc": {
                 "doctype": "Employee Checkin",
@@ -141,7 +180,15 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             response = requests.post(url, headers=headers, json=payload)
             if response.status_code == 200:
                 is_checked_in = True
-                await query.edit_message_text(f"Successfully checked in at {current_time}!\n\nI will remind you to check out in 9 hours 15 minutes.")
+                msg_text = (
+                    "✅ *Successfully Checked In*\n\n"
+                    "*Date:*\n"
+                    f"{date_ascii}\n"
+                    "*Time:*\n"
+                    f"{time_ascii}\n"
+                    "I will remind you to check out in 9 hours 15 minutes."
+                )
+                await query.edit_message_text(msg_text, parse_mode="Markdown")
                 if chat_id in checkout_tasks:
                     checkout_tasks[chat_id].cancel()
                 checkout_tasks[chat_id] = context.application.create_task(checkout_loop(context, chat_id))
@@ -168,7 +215,11 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
         }
         
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = datetime.now()
+        current_time = now.strftime("%Y-%m-%d %H:%M:%S")
+        date_ascii = render_ascii_str(now.strftime("%Y-%m-%d"))
+        time_ascii = render_ascii_str(now.strftime("%H:%M:%S"))
+        
         payload = {
             "doc": {
                 "doctype": "Employee Checkin",
@@ -184,7 +235,15 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             response = requests.post(url, headers=headers, json=payload)
             if response.status_code == 200:
                 is_checked_in = False 
-                await query.edit_message_text(f"Successfully checked out at {current_time}! See you tomorrow.")
+                msg_text = (
+                    "✅ *Successfully Checked Out*\n\n"
+                    "*Date:*\n"
+                    f"{date_ascii}\n"
+                    "*Time:*\n"
+                    f"{time_ascii}\n"
+                    "See you tomorrow!"
+                )
+                await query.edit_message_text(msg_text, parse_mode="Markdown")
                 if chat_id in checkout_tasks:
                     checkout_tasks[chat_id].cancel()
                     del checkout_tasks[chat_id]
@@ -195,7 +254,8 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data == "checkout_no":
         is_checked_in = False
-        await query.edit_message_text(f"Checkout alert ignored at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}. I will remind you again in 10 minutes.")
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        await query.edit_message_text(f"Checkout alert ignored at {now_str}. I will remind you again in 10 minutes.")
 
 def main():
     if not BOT_TOKEN:
